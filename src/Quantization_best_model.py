@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, classification_report, confusion_matrix
 
-# Use CUDA for fast QAT passes
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
@@ -18,9 +18,9 @@ CHECKPOINT_PATH = "/content/drive/MyDrive/Parkinsion_2d_data/mobilenetv2_best.pt
 BATCH_SIZE = 32
 NUM_QAT_EPOCHS = 10
 
-# ==========================================================
-# DATA LOADING (Exact balanced original config)
-# ==========================================================
+
+# DATA LOADING 
+
 train_transform = transforms.Compose([
     transforms.Grayscale(num_output_channels=3),
     transforms.Resize((224,224)),
@@ -61,9 +61,9 @@ val_loader = DataLoader(Subset(val_dataset, target_val_idx), batch_size=BATCH_SI
 
 weights = torch.tensor([len(train_targets)/(2*class_counts[0]), len(train_targets)/(2*class_counts[1])], dtype=torch.float32).to(device)
 
-# ==========================================================
-# REBUILD FP32 MODEL & LOAD WEIGHTS
-# ==========================================================
+
+# LOAD WEIGHTS
+
 model_fp32 = models.mobilenet_v2(weights=None)
 model_fp32.classifier = nn.Sequential(
     nn.Dropout(0.2),
@@ -72,42 +72,40 @@ model_fp32.classifier = nn.Sequential(
 model_fp32.load_state_dict(checkpoint["model_state_dict"], strict=True)
 model_fp32.eval()
 
-# ==========================================================
-# MODERN FX CONFIGURATION MAPPING (FIXES RUNTIMEERROR)
-# ==========================================================
+
+# FX CONFIGURATION
+
 import torch.ao.quantization.quantize_fx as quantize_fx
 from torch.ao.quantization import QConfigMapping
 
 print("\nConfiguring pure FX mapping engine...")
 
-# Force uniform per_tensor schemes to prevent graph converter schema collisions
+
 qat_qconfig = torch.ao.quantization.get_default_qat_qconfig('fbgemm')
 
-# We build a strict mapping structure
+
 qconfig_mapping = QConfigMapping().set_global(qat_qconfig)
 
-# 1. Block early sensitive layers entirely from quantization processing
+
 for i in range(14):
     qconfig_mapping.set_module_name(f"features.{i}", None)
 
 example_inputs = (torch.randn(1, 3, 224, 224),)
 
-# 2. Structure the active QAT graph instance cleanly
+
 model_qat = quantize_fx.prepare_qat_fx(model_fp32, qconfig_mapping, example_inputs)
 
-# 3. Explicitly manage gradients based on your layer targets
+
 model_qat.train()
 for name, param in model_qat.named_parameters():
     if any(f"features.{i}." in name for i in range(14)):
-        param.requires_grad = False  # Freeze early features completely
+        param.requires_grad = False 
     else:
-        param.requires_grad = True   # Enable gradient adjustments on 14+ and head
+        param.requires_grad = True  
 
 model_qat.to(device)
 
-# ==========================================================
-# STRICT DUAL-ACCURACY QAT TRAINING LOOP
-# ==========================================================
+
 criterion = nn.CrossEntropyLoss(weight=weights)
 optimizer = optim.Adam(filter(lambda p: p.requires_grad, model_qat.parameters()), lr=1e-6)
 
@@ -148,20 +146,20 @@ for epoch in range(NUM_QAT_EPOCHS):
     val_balanced_acc = balanced_accuracy_score(y_val_true, y_val_pred) * 100
     print(f"Epoch {epoch+1:02d} | Loss: {running_loss:.4f} | Train Acc: {train_acc:.2f}% | Val Acc: {val_acc:.2f}% | Balanced Val Acc: {val_balanced_acc:.2f}%")
 
-    # Balanced checkpointer capturing peak performance configurations
+    # Balanced checkpointer capturing
     combined_score = (val_acc + val_balanced_acc) / 2.0
     if combined_score > best_combined_score:
         best_combined_score = combined_score
         best_model_state = copy.deepcopy(model_qat.state_dict())
 
-# Prepare for safe deployment compilation
+
 model_qat.to("cpu")
 model_qat.load_state_dict(best_model_state)
 model_qat.eval()
 
-# ==========================================================
-# SAFE FX CONVERSION
-# ==========================================================
+
+# FX CONVERSION
+
 print("\nConverting optimized QAT model into finalized INT8 representation...")
 model_int8 = quantize_fx.convert_fx(model_qat)
 print("Conversion Complete with no runtime errors!")
@@ -185,6 +183,6 @@ print(confusion_matrix(y_true, y_pred))
 print("\nClassification Report:")
 print(classification_report(y_true, y_pred, digits=4, zero_division=0))
 
-# Save the production model file
+# Save
 torch.jit.save(torch.jit.script(model_int8), "mobilenetv2_qat_int8.pt")
 print("\nEdge model saved as 'mobilenetv2_qat_int8.pt'")
