@@ -29,16 +29,12 @@ from sklearn.metrics import (
 
 warnings.filterwarnings("ignore")
 
-# ==========================================================
-# COLAB DRIVE MOUNT (Optional)
-# ==========================================================
-# If your dataset is stored on Google Drive, uncomment these two lines:
-# from google.colab import drive
+
+
+
 # drive.mount('/content/drive')
 
-# ==========================================================
-# FIXED RANDOM SEED
-# ==========================================================
+
 SEED = 42
 
 random.seed(SEED)
@@ -54,11 +50,9 @@ print("=" * 60)
 print("Random Seed :", SEED)
 print("=" * 60)
 
-# ==========================================================
-# DEVICE CONFIGURATION (Enforces High-Speed CUDA on Colab)
-# ==========================================================
-# Note: Make sure to set Colab runtime to GPU!
-# (Runtime -> Change runtime type -> T4 GPU / L4 GPU)
+
+# CUDA 
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 print("Using Device :", device)
@@ -66,20 +60,16 @@ if device.type == 'cuda':
     print("GPU Model    :", torch.cuda.get_device_name(0))
 print("=" * 60)
 
-# ==========================================================
-# DATASET PATH (Update this to your Colab directory)
-# ==========================================================
-# Example if uploaded directly to Colab filesystem: '/content/Dataset_3'
-# Example if using Google Drive: '/content/drive/MyDrive/PD_CNN/Dataset_3'
+
 DATASET_PATH = "/content/drive/MyDrive/Parkinsion_2d_data/Dataset_3"
 
-# Dynamic Worker Allocation for Colab VM Environment
+# Dynamic Worker 
 NUM_WORKERS = os.cpu_count()
 print(f"Allocating Data Workers: {NUM_WORKERS}")
 
-# ==========================================================
-# TRAIN AUGMENTATION
-# ==========================================================
+
+# TRAIN 
+
 train_transform = transforms.Compose([
     transforms.Grayscale(num_output_channels=3),
     transforms.Resize((224,224)),
@@ -110,9 +100,9 @@ train_transform = transforms.Compose([
     )
 ])
 
-# ==========================================================
+
 # VALIDATION
-# ==========================================================
+
 val_transform = transforms.Compose([
     transforms.Grayscale(num_output_channels=3),
     transforms.Resize((224,224)),
@@ -123,9 +113,9 @@ val_transform = transforms.Compose([
     )
 ])
 
-# ==========================================================
-# LOAD DATASET
-# ==========================================================
+
+# DATASET
+
 if not os.path.exists(DATASET_PATH):
     raise FileNotFoundError(f"Dataset directory not found at {DATASET_PATH}. Please upload or verify your path.")
 
@@ -145,9 +135,9 @@ print("Class Mapping :", train_dataset.class_to_idx)
 print("Total Images :", len(train_dataset))
 print()
 
-# ==========================================================
-# STRATIFIED 5 FOLD
-# ==========================================================
+
+# 5 FOLD
+
 targets = np.array(train_dataset.targets)
 
 skf = StratifiedKFold(
@@ -156,9 +146,9 @@ skf = StratifiedKFold(
     random_state=SEED
 )
 
-# ==========================================================
-# BUILD MOBILENETV2
-# ==========================================================
+
+# MOBILENETV2
+
 def build_model():
     model = models.mobilenet_v2(
         weights=models.MobileNet_V2_Weights.DEFAULT
@@ -183,9 +173,9 @@ def build_model():
 
     return model.to(device)
 
-# ==========================================================
-# TRAINING CONFIGURATION
-# ==========================================================
+
+# TRAINING 
+
 NUM_EPOCHS = 30
 BATCH_SIZE = 32
 LEARNING_RATE = 1e-4
@@ -195,9 +185,9 @@ PATIENCE = 8
 best_global_accuracy = 0.0
 fold_results = []
 
-# ==========================================================
-# START 5-FOLD TRAINING
-# ==========================================================
+
+# 5-FOLD TRAINING
+
 for fold, (train_idx, val_idx) in enumerate(
         skf.split(np.arange(len(targets)), targets), start=1):
 
@@ -205,16 +195,12 @@ for fold, (train_idx, val_idx) in enumerate(
     print(f"Fold {fold} / 5")
     print("=" * 70)
 
-    # ---------------------------------------
-    # Compute class statistics
-    # ---------------------------------------
+
     train_targets = targets[train_idx]
     class_counts = np.bincount(train_targets)
     print("Training Class Count :", class_counts)
 
-    # ---------------------------------------
-    # Weighted Random Sampler
-    # ---------------------------------------
+
     class_weights = 1.0 / class_counts
     sample_weights = class_weights[train_targets]
     sample_weights = torch.DoubleTensor(sample_weights)
@@ -243,9 +229,9 @@ for fold, (train_idx, val_idx) in enumerate(
 
     model = build_model()
 
-    # --------------------------------------------
+    
     # Loss Function
-    # --------------------------------------------
+ 
     hc_count = class_counts[0]
     pd_count = class_counts[1]
 
@@ -260,9 +246,9 @@ for fold, (train_idx, val_idx) in enumerate(
         weight=weights
     )
 
-    # --------------------------------------------
+    
     # Optimizer
-    # --------------------------------------------
+    
     optimizer = optim.Adam(
         filter(
             lambda p: p.requires_grad,
@@ -272,9 +258,9 @@ for fold, (train_idx, val_idx) in enumerate(
         weight_decay=WEIGHT_DECAY
     )
 
-    # --------------------------------------------
+    
     # Scheduler
-    # --------------------------------------------
+    
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
         mode="max",
@@ -287,18 +273,18 @@ for fold, (train_idx, val_idx) in enumerate(
     best_fold_model = None
     early_stop_counter = 0
 
-    # ======================================================
+    
     # EPOCH LOOP
-    # ======================================================
+    
     for epoch in range(NUM_EPOCHS):
         model.train()
         running_loss = 0.0
         correct_train = 0
         total_train = 0
 
-        # --------------------------------------------
+        
         # TRAIN
-        # --------------------------------------------
+       
         for images, labels in train_loader:
             images = images.to(device)
             labels = labels.to(device)
@@ -316,9 +302,9 @@ for fold, (train_idx, val_idx) in enumerate(
 
         train_accuracy = 100 * correct_train / total_train
 
-        # ==================================================
+       
         # VALIDATION
-        # ==================================================
+       
         model.eval()
         val_correct = 0
         val_total = 0
@@ -349,9 +335,9 @@ for fold, (train_idx, val_idx) in enumerate(
             f"Val {val_accuracy:.2f}%"
         )
 
-        # ==================================================
-        # BEST MODEL OF THIS FOLD
-        # ==================================================
+        
+        # BEST MODEL 
+        
         if val_accuracy > best_fold_accuracy:
             best_fold_accuracy = val_accuracy
             best_fold_model = copy.deepcopy(model.state_dict())
@@ -359,19 +345,19 @@ for fold, (train_idx, val_idx) in enumerate(
         else:
             early_stop_counter += 1
 
-        # ==================================================
+       
         # EARLY STOPPING
-        # ==================================================
+      
         if early_stop_counter >= PATIENCE:
             print("Early stopping triggered.")
             break
 
-    # Restore best model of this fold
+    # Restore best model of fold
     model.load_state_dict(best_fold_model)
 
-    # ==========================================================
-    # FINAL VALIDATION USING BEST MODEL OF THIS FOLD
-    # ==========================================================
+    
+    # FINAL VALIDATION 
+   
     model.eval()
     y_true = []
     y_pred = []
@@ -385,9 +371,9 @@ for fold, (train_idx, val_idx) in enumerate(
             y_true.extend(labels.cpu().numpy()) # Added .cpu() fix for GPU execution
             y_pred.extend(preds.cpu().numpy())
 
-    # ==========================================================
+    
     # METRICS
-    # ==========================================================
+    
     acc = accuracy_score(y_true, y_pred)
     precision = precision_score(y_true, y_pred, average="binary", zero_division=0)
     recall = recall_score(y_true, y_pred, average="binary", zero_division=0)
@@ -410,9 +396,9 @@ for fold, (train_idx, val_idx) in enumerate(
 
     fold_results.append(balanced_acc)
 
-    # ==========================================================
-    # SAVE BEST MODEL
-    # ==========================================================
+   
+    # BEST MODEL
+    
     if balanced_acc > best_global_accuracy:
         best_global_accuracy = balanced_acc
         torch.save({
@@ -425,17 +411,17 @@ for fold, (train_idx, val_idx) in enumerate(
         }, "mobilenetv2_best.pth")
         print("\nBest model saved.")
 
-# ==========================================================
-# SAVE FINAL MODEL
-# ==========================================================
+
+#  FINAL MODEL
+
 torch.save({
     "model_state_dict": model.state_dict(),
     "class_to_idx": train_dataset.class_to_idx
 }, "mobilenetv2_final.pth")
 
-# ==========================================================
+
 # FINAL RESULTS
-# ==========================================================
+
 print("\n" + "="*70)
 print("Training Finished")
 print("="*70)
